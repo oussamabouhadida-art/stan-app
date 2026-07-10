@@ -42,16 +42,16 @@ stan-app/
 
 ## 2. Package responsibilities
 
-| Package | Owns | May depend on | Never depends on |
-| --- | --- | --- | --- |
-| `@stan/db` | Prisma schema, migrations, generated client, tenant extension wiring | `@stan/core` | apps, ui |
-| `@stan/core` | `Result`/error types, `TenantContext` type, Prisma tenant-scoping extension | — | apps, ui, next |
-| `@stan/config` | Municipality config file schema (Zod), parser, YAML/JSON loader | `@stan/validation` | apps, ui |
-| `@stan/validation` | Reusable Zod primitives (email, phone FR, postal code, SIRET…) | — | apps, ui |
-| `@stan/domain` | Cross-cutting domain types & pure functions (school year, calendars, age brackets) | `@stan/validation` | apps, ui, db |
-| `@stan/auth` | Supabase server/browser client factories, session → `TenantContext` resolution | `@stan/db`, `@stan/core` | ui |
-| `@stan/ui` | Design-system components, theme provider (per-municipality theming) | — | apps, db, services |
-| `@stan/tsconfig` | Base/next/node tsconfig presets | — | everything else |
+| Package            | Owns                                                                                               | May depend on            | Never depends on   |
+| ------------------ | -------------------------------------------------------------------------------------------------- | ------------------------ | ------------------ |
+| `@stan/db`         | Prisma schema, migrations, generated client, tenant-scoping extension, RLS helper                  | `@stan/core`             | apps, ui           |
+| `@stan/core`       | `Result`/error types, `TenantContext`, tenant-model registry, permission catalog (pure, no Prisma) | —                        | apps, ui, next     |
+| `@stan/config`     | Municipality config file schema (Zod), parser, YAML/JSON loader                                    | `@stan/validation`       | apps, ui           |
+| `@stan/validation` | Reusable Zod primitives (email, phone FR, postal code, SIRET…)                                     | —                        | apps, ui           |
+| `@stan/domain`     | Cross-cutting domain types & pure functions (school year, calendars, age brackets)                 | `@stan/validation`       | apps, ui, db       |
+| `@stan/auth`       | Supabase server/browser client factories, session → `TenantContext` resolution                     | `@stan/db`, `@stan/core` | ui                 |
+| `@stan/ui`         | Design-system components, theme provider (per-municipality theming)                                | —                        | apps, db, services |
+| `@stan/tsconfig`   | Base/next/node tsconfig presets                                                                    | —                        | everything else    |
 
 The dependency direction is: **apps → packages**, and within packages, **ui/config/validation/domain → core**, with `db` and `auth` at the infrastructure edge. No cycles.
 
@@ -131,18 +131,18 @@ Every module follows the **same** internal shape. This uniformity is what makes 
 
 Configured in `tsconfig` and honoured by ESLint, Next, and Vitest:
 
-| Alias | Resolves to |
-| --- | --- |
-| `@/modules/*` | `apps/web/modules/*` |
-| `@/shared/*` | `apps/web/shared/*` |
-| `@/app/*` | `apps/web/app/*` |
-| `@stan/db` | `packages/db` |
-| `@stan/ui` | `packages/ui` |
-| `@stan/core` | `packages/core` |
-| `@stan/auth` | `packages/auth` |
-| `@stan/config` | `packages/config` |
+| Alias              | Resolves to           |
+| ------------------ | --------------------- |
+| `@/modules/*`      | `apps/web/modules/*`  |
+| `@/shared/*`       | `apps/web/shared/*`   |
+| `@/app/*`          | `apps/web/app/*`      |
+| `@stan/db`         | `packages/db`         |
+| `@stan/ui`         | `packages/ui`         |
+| `@stan/core`       | `packages/core`       |
+| `@stan/auth`       | `packages/auth`       |
+| `@stan/config`     | `packages/config`     |
 | `@stan/validation` | `packages/validation` |
-| `@stan/domain` | `packages/domain` |
+| `@stan/domain`     | `packages/domain`     |
 
 Relative `../../..` imports across module or package boundaries are disallowed by lint. Within a single file's own folder, short relative imports are fine.
 
@@ -154,7 +154,7 @@ Relative `../../..` imports across module or package boundaries are disallowed b
 - **React components:** `PascalCase.tsx` (`AttendanceSheet.tsx`).
 - **Non-component TS:** `kebab-case.ts` (`attendance-service.ts`, `child-repository.ts`).
 - **Zod schemas:** `*.schema.ts`. **Tests:** `*.test.ts` / `*.test.tsx` co-located next to the file under test.
-- **Types:** `PascalCase`. **Functions/vars:** `camelCase`. **Constants/enums values:** `SCREAMING_SNAKE_CASE` only for true constants; enum *members* are `PascalCase`.
+- **Types:** `PascalCase`. **Functions/vars:** `camelCase`. **Constants/enums values:** `SCREAMING_SNAKE_CASE` only for true constants; enum _members_ are `PascalCase`.
 - One primary export per file where practical; barrels (`index.ts`) only at module/package public surfaces.
 
 Full language conventions are in [coding-conventions.md](coding-conventions.md); database naming is in [database-philosophy.md](database-philosophy.md).
@@ -163,16 +163,16 @@ Full language conventions are in [coding-conventions.md](coding-conventions.md);
 
 ## 6. Where things go — quick reference
 
-| I'm adding… | It goes in… |
-| --- | --- |
-| A new page/route | `apps/web/app/(app)/<domain>/` — thin, delegates to a module |
-| A business rule | `apps/web/modules/<domain>/services/` (or `domain/` if pure) |
-| A DB query | `apps/web/modules/<domain>/repositories/` |
-| A form's validation | `apps/web/modules/<domain>/schemas/` |
-| A reusable button/input | `@stan/ui` |
-| A domain type used by 2+ modules | `@stan/domain` |
-| A Zod primitive (FR phone, SIRET) | `@stan/validation` |
-| A Prisma model | `@stan/db` schema |
-| The municipality config format | `@stan/config` |
-| A webhook / external endpoint | `apps/web/app/api/` |
-| A one-off script | `scripts/` |
+| I'm adding…                       | It goes in…                                                  |
+| --------------------------------- | ------------------------------------------------------------ |
+| A new page/route                  | `apps/web/app/(app)/<domain>/` — thin, delegates to a module |
+| A business rule                   | `apps/web/modules/<domain>/services/` (or `domain/` if pure) |
+| A DB query                        | `apps/web/modules/<domain>/repositories/`                    |
+| A form's validation               | `apps/web/modules/<domain>/schemas/`                         |
+| A reusable button/input           | `@stan/ui`                                                   |
+| A domain type used by 2+ modules  | `@stan/domain`                                               |
+| A Zod primitive (FR phone, SIRET) | `@stan/validation`                                           |
+| A Prisma model                    | `@stan/db` schema                                            |
+| The municipality config format    | `@stan/config`                                               |
+| A webhook / external endpoint     | `apps/web/app/api/`                                          |
+| A one-off script                  | `scripts/`                                                   |

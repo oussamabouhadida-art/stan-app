@@ -11,7 +11,7 @@ Decision record: [ADR-0002](adr/ADR-0002-multi-tenancy-strategy.md).
 ## 1. The tenant
 
 - The **tenant is the `Municipality`**. Every piece of business data belongs to exactly one municipality.
-- A **community of municipalities** (communauté de communes / agglomération) is modelled separately and *groups* municipalities for reporting; it is not itself the isolation boundary. Isolation is always at the municipality level.
+- A **community of municipalities** (communauté de communes / agglomération) is modelled separately and _groups_ municipalities for reporting; it is not itself the isolation boundary. Isolation is always at the municipality level.
 - A small amount of data is **global** (not tenant-scoped): the `User` identity record, platform-level `Permission` catalog definitions, and platform super-admin records. Everything else is tenant-scoped.
 
 ---
@@ -20,11 +20,11 @@ Decision record: [ADR-0002](adr/ADR-0002-multi-tenancy-strategy.md).
 
 We use a **single database with a shared schema**, where every tenant-scoped table carries a `municipality_id` column. We rejected the alternatives:
 
-| Strategy | Verdict | Why |
-| --- | --- | --- |
-| Database per tenant | ✗ | Hundreds of DBs to migrate, back up, monitor. Unmanageable at our scale; huge fixed cost per small municipality. |
-| Schema per tenant | ✗ | Migrations must fan out across N schemas; connection/tooling complexity; still one DB. Cost outweighs benefit for 2k–100k-inhabitant tenants. |
-| **Shared schema + `municipality_id`** | ✓ | One migration path, one backup, trivial to onboard a tenant, efficient. Isolation enforced by two independent mechanisms (below). Industry standard for B2B SaaS at this scale. |
+| Strategy                              | Verdict | Why                                                                                                                                                                             |
+| ------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Database per tenant                   | ✗       | Hundreds of DBs to migrate, back up, monitor. Unmanageable at our scale; huge fixed cost per small municipality.                                                                |
+| Schema per tenant                     | ✗       | Migrations must fan out across N schemas; connection/tooling complexity; still one DB. Cost outweighs benefit for 2k–100k-inhabitant tenants.                                   |
+| **Shared schema + `municipality_id`** | ✓       | One migration path, one backup, trivial to onboard a tenant, efficient. Isolation enforced by two independent mechanisms (below). Industry standard for B2B SaaS at this scale. |
 
 The trade-off of a shared schema is that isolation becomes a **discipline problem** ("did every query filter by tenant?"). We remove the discipline problem by making unscoped access **structurally impossible** and adding a **database-level** backstop.
 
@@ -37,7 +37,7 @@ Isolation does not rely on developers remembering to add `where municipalityId`.
 ### Wall 1 — Application layer: tenant-scoped Prisma client (Primary)
 
 - Every request resolves a **`TenantContext`** early (see [authentication.md](authentication.md)): `{ userId, municipalityId, membershipId, permissions }`.
-- Data access uses a **Prisma Client extension** (`@stan/core`) built from that context. The extension:
+- Data access uses a **Prisma Client extension** (`@stan/db`, driven by the tenant-model registry in `@stan/core`) built from that context. The extension:
   - **automatically injects** `municipalityId` into the `where` of every `find*`, `update*`, `delete*`, `count`, `aggregate`, `groupBy` on any model tagged as tenant-scoped;
   - **automatically sets** `municipalityId` on every `create`/`createMany`;
   - **throws** if code somehow tries to override `municipalityId` with a different value, or runs a tenant-scoped query without a `TenantContext`.
@@ -62,12 +62,12 @@ Two walls, different technologies, different failure modes. A single mistake can
 
 ```ts
 type TenantContext = {
-  userId: string;          // global User.id (== Supabase auth user id)
-  municipalityId: string;  // the active tenant for this request
-  membershipId: string;    // the User↔Municipality membership in use
+  userId: string; // global User.id (== Supabase auth user id)
+  municipalityId: string; // the active tenant for this request
+  membershipId: string; // the User↔Municipality membership in use
   roleId: string;
   permissions: ReadonlySet<string>; // resolved permission keys for this membership
-  isSuperAdmin: boolean;   // platform operator, bypasses tenant scoping only for platform ops
+  isSuperAdmin: boolean; // platform operator, bypasses tenant scoping only for platform ops
 };
 ```
 
@@ -98,7 +98,7 @@ User (global identity, 1:1 with Supabase auth user)
 
 1. Every new business table **must** declare `municipalityId` and be registered as tenant-scoped, **or** be explicitly justified as global in code review.
 2. Never construct a Prisma client by hand in a repository. Always receive the scoped client from the request's `TenantContext`.
-3. Never accept `municipalityId` as user input for scoping — it comes only from the server-resolved `TenantContext`. (User input that *names* a municipality, e.g. during super-admin provisioning, is a different, explicitly-authorized path.)
+3. Never accept `municipalityId` as user input for scoping — it comes only from the server-resolved `TenantContext`. (User input that _names_ a municipality, e.g. during super-admin provisioning, is a different, explicitly-authorized path.)
 4. Every tenant table migration enables and forces RLS with the standard policy.
 5. Cross-tenant reporting (community-level dashboards) goes through a dedicated, explicitly-authorized **reporting service** that aggregates per-municipality data the actor is entitled to — never by loosening the isolation walls.
 
@@ -118,11 +118,11 @@ An isolation test failure blocks all merges. See [testing.md](testing.md).
 
 ## 8. Summary
 
-| Layer | Mechanism | Protects against |
-| --- | --- | --- |
-| Application | Tenant-scoped Prisma extension | Forgotten `where`, accidental cross-tenant writes |
-| Database | Forced Row-Level Security | App bugs, raw SQL, compromised code paths |
-| Identity | Server-resolved `TenantContext`, re-validated each request | Stale cookies, revoked memberships |
-| Process | Model registry + CI checks + isolation tests | New tables shipped without isolation |
+| Layer       | Mechanism                                                  | Protects against                                  |
+| ----------- | ---------------------------------------------------------- | ------------------------------------------------- |
+| Application | Tenant-scoped Prisma extension                             | Forgotten `where`, accidental cross-tenant writes |
+| Database    | Forced Row-Level Security                                  | App bugs, raw SQL, compromised code paths         |
+| Identity    | Server-resolved `TenantContext`, re-validated each request | Stale cookies, revoked memberships                |
+| Process     | Model registry + CI checks + isolation tests               | New tables shipped without isolation              |
 
 Isolation is not a feature; it is a property enforced by construction.

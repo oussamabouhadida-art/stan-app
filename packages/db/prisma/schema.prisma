@@ -1,0 +1,822 @@
+// Stan — Prisma schema (validated Phase 1). See docs/database/ for the rationale.
+//
+// Conventions: PascalCase models → snake_case plural tables (@@map). uuid PKs
+// (gen_random_uuid()). `municipalityId` and audit-actor columns are SCALAR uuid
+// fields (no Prisma relation) — their FKs, plus RLS, partial-unique indexes and
+// CHECK constraints, are added in the "security" migration. Emails are stored
+// lowercased by the application. See docs/database/design-review.md §2.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ── Enums ────────────────────────────────────────────────────────────────────
+
+enum MunicipalityStatus {
+  ACTIVE
+  SUSPENDED
+
+  @@map("municipality_status")
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+
+  @@map("user_status")
+}
+
+enum MembershipStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+
+  @@map("membership_status")
+}
+
+enum AuditSeverity {
+  INFO
+  NOTICE
+  SECURITY
+
+  @@map("audit_severity")
+}
+
+enum StructureType {
+  SCHOOL
+  LEISURE
+  YOUTH
+  HOLIDAY
+
+  @@map("structure_type")
+}
+
+enum HolidayZone {
+  A
+  B
+  C
+
+  @@map("holiday_zone")
+}
+
+enum Weekday {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+
+  @@map("weekday")
+}
+
+enum ProgramType {
+  ACTIVITY
+  WORKSHOP
+
+  @@map("program_type")
+}
+
+enum PricingRuleType {
+  FLAT
+  QUOTIENT
+
+  @@map("pricing_rule_type")
+}
+
+enum Sex {
+  MALE
+  FEMALE
+  UNSPECIFIED
+
+  @@map("sex")
+}
+
+enum GuardianRelationship {
+  MOTHER
+  FATHER
+  LEGAL_GUARDIAN
+  OTHER
+
+  @@map("guardian_relationship")
+}
+
+enum EnrollmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+
+  @@map("enrollment_status")
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  EXCUSED
+  LATE
+
+  @@map("attendance_status")
+}
+
+enum ParticipationStatus {
+  REGISTERED
+  CANCELLED
+  ATTENDED
+
+  @@map("participation_status")
+}
+
+enum EmailStatus {
+  QUEUED
+  SENT
+  FAILED
+
+  @@map("email_status")
+}
+
+// ── 1 · Foundation ───────────────────────────────────────────────────────────
+
+model Community {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name           String
+  code           String         @unique
+  municipalities Municipality[]
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("communities")
+}
+
+model Municipality {
+  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code              String             @unique
+  name              String
+  communityId       String?            @map("community_id") @db.Uuid
+  community         Community?         @relation(fields: [communityId], references: [id])
+  siret             String?
+  timezone          String             @default("Europe/Paris")
+  locale            String             @default("fr-FR")
+  addressStreet     String?            @map("address_street")
+  addressPostalCode String?            @map("address_postal_code")
+  addressCity       String?            @map("address_city")
+  contactEmail      String?            @map("contact_email")
+  contactPhone      String?            @map("contact_phone")
+  logoUrl           String?            @map("logo_url")
+  primaryColor      String?            @map("primary_color")
+  secondaryColor    String?            @map("secondary_color")
+  banner            String?
+  status            MunicipalityStatus @default(ACTIVE)
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt         DateTime?          @map("deleted_at") @db.Timestamptz(6)
+
+  @@index([communityId])
+  @@map("municipalities")
+}
+
+model User {
+  id           String       @id @db.Uuid
+  email        String       @unique
+  firstName    String       @map("first_name")
+  lastName     String       @map("last_name")
+  locale       String       @default("fr-FR")
+  isSuperAdmin Boolean      @default(false) @map("is_super_admin")
+  status       UserStatus   @default(ACTIVE)
+  memberships  Membership[]
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("users")
+}
+
+model Membership {
+  id             String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String                @map("municipality_id") @db.Uuid
+  userId         String                @map("user_id") @db.Uuid
+  user           User                  @relation(fields: [userId], references: [id])
+  roleId         String                @map("role_id") @db.Uuid
+  role           Role                  @relation(fields: [roleId], references: [id])
+  status         MembershipStatus      @default(INVITED)
+  invitedAt      DateTime?             @map("invited_at") @db.Timestamptz(6)
+  acceptedAt     DateTime?             @map("accepted_at") @db.Timestamptz(6)
+  structures     MembershipStructure[]
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime?             @map("deleted_at") @db.Timestamptz(6)
+
+  @@index([municipalityId])
+  @@index([userId])
+  @@index([roleId])
+  @@map("memberships")
+}
+
+model Role {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String           @map("municipality_id") @db.Uuid
+  name           String
+  description    String?
+  isTemplate     Boolean          @default(false) @map("is_template")
+  memberships    Membership[]
+  permissions    RolePermission[]
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime?        @map("deleted_at") @db.Timestamptz(6)
+
+  @@index([municipalityId])
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key         String           @unique
+  domain      String
+  description String
+  roles       RolePermission[]
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([domain])
+  @@map("permissions")
+}
+
+model RolePermission {
+  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String     @map("municipality_id") @db.Uuid
+  roleId         String     @map("role_id") @db.Uuid
+  role           Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId   String     @map("permission_id") @db.Uuid
+  permission     Permission @relation(fields: [permissionId], references: [id])
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model MembershipStructure {
+  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String     @map("municipality_id") @db.Uuid
+  membershipId   String     @map("membership_id") @db.Uuid
+  membership     Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  structureId    String     @map("structure_id") @db.Uuid
+  structure      Structure  @relation(fields: [structureId], references: [id])
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([membershipId, structureId])
+  @@index([structureId])
+  @@map("membership_structures")
+}
+
+model AuditLog {
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId    String?       @map("municipality_id") @db.Uuid
+  actorUserId       String?       @map("actor_user_id") @db.Uuid
+  actorMembershipId String?       @map("actor_membership_id") @db.Uuid
+  action            String
+  entityType        String        @map("entity_type")
+  entityId          String?       @map("entity_id") @db.Uuid
+  summary           String
+  metadata          Json?         @db.JsonB
+  severity          AuditSeverity @default(INFO)
+  ip                String?
+  userAgent         String?       @map("user_agent")
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([municipalityId, createdAt])
+  @@index([entityType, entityId])
+  @@index([actorUserId])
+  @@map("audit_logs")
+}
+
+model Setting {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String   @map("municipality_id") @db.Uuid
+  key            String
+  value          Json     @db.JsonB
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([municipalityId, key])
+  @@map("settings")
+}
+
+model MunicipalityModule {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String   @map("municipality_id") @db.Uuid
+  moduleKey      String   @map("module_key")
+  enabled        Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([municipalityId, moduleKey])
+  @@map("municipality_modules")
+}
+
+model EmailDomain {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String   @map("municipality_id") @db.Uuid
+  domain         String
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([municipalityId, domain])
+  @@map("email_domains")
+}
+
+// ── 2 · Configuration ────────────────────────────────────────────────────────
+
+model Neighborhood {
+  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String      @map("municipality_id") @db.Uuid
+  name           String
+  code           String?
+  structures     Structure[]
+  families       Family[]
+  children       Child[]
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime?   @map("deleted_at") @db.Timestamptz(6)
+
+  @@index([municipalityId])
+  @@map("neighborhoods")
+}
+
+model Structure {
+  id                String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId    String                @map("municipality_id") @db.Uuid
+  code              String
+  name              String
+  type              StructureType
+  neighborhoodId    String?               @map("neighborhood_id") @db.Uuid
+  neighborhood      Neighborhood?         @relation(fields: [neighborhoodId], references: [id])
+  addressStreet     String?               @map("address_street")
+  addressPostalCode String?               @map("address_postal_code")
+  addressCity       String?               @map("address_city")
+  geoLat            Decimal?              @map("geo_lat") @db.Decimal(9, 6)
+  geoLng            Decimal?              @map("geo_lng") @db.Decimal(9, 6)
+  capacity          Int?
+  openingHours      OpeningHour[]
+  programs          Program[]
+  sessions          Session[]
+  memberships       MembershipStructure[]
+  schooledChildren  Child[]               @relation("ChildSchool")
+  trips             Trip[]
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt         DateTime?             @map("deleted_at") @db.Timestamptz(6)
+
+  @@index([municipalityId])
+  @@index([neighborhoodId])
+  @@index([type])
+  @@map("structures")
+}
+
+model SchoolYear {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String          @map("municipality_id") @db.Uuid
+  label          String
+  startsOn       DateTime        @map("starts_on") @db.Date
+  endsOn         DateTime        @map("ends_on") @db.Date
+  zone           HolidayZone
+  holidayPeriods HolidayPeriod[]
+  publicHolidays PublicHoliday[]
+  enrollments    Enrollment[]
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([municipalityId, label])
+  @@map("school_years")
+}
+
+model HolidayPeriod {
+  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String     @map("municipality_id") @db.Uuid
+  schoolYearId   String     @map("school_year_id") @db.Uuid
+  schoolYear     SchoolYear @relation(fields: [schoolYearId], references: [id], onDelete: Cascade)
+  name           String
+  startsOn       DateTime   @map("starts_on") @db.Date
+  endsOn         DateTime   @map("ends_on") @db.Date
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([schoolYearId])
+  @@map("holiday_periods")
+}
+
+model PublicHoliday {
+  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String      @map("municipality_id") @db.Uuid
+  schoolYearId   String?     @map("school_year_id") @db.Uuid
+  schoolYear     SchoolYear? @relation(fields: [schoolYearId], references: [id])
+  name           String
+  date           DateTime    @db.Date
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([municipalityId, date, name])
+  @@map("public_holidays")
+}
+
+model OpeningHour {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String    @map("municipality_id") @db.Uuid
+  structureId    String    @map("structure_id") @db.Uuid
+  structure      Structure @relation(fields: [structureId], references: [id], onDelete: Cascade)
+  period         String?
+  dayOfWeek      Weekday   @map("day_of_week")
+  opensAt        DateTime  @map("opens_at") @db.Time(6)
+  closesAt       DateTime  @map("closes_at") @db.Time(6)
+  validFrom      DateTime? @map("valid_from") @db.Date
+  validTo        DateTime? @map("valid_to") @db.Date
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([structureId, dayOfWeek])
+  @@map("opening_hours")
+}
+
+model Program {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String        @map("municipality_id") @db.Uuid
+  code           String
+  name           String
+  type           ProgramType
+  structureId    String?       @map("structure_id") @db.Uuid
+  structure      Structure?    @relation(fields: [structureId], references: [id])
+  minAge         Int?          @map("min_age")
+  maxAge         Int?          @map("max_age")
+  capacity       Int?
+  pricingTiers   PricingTier[]
+  enrollments    Enrollment[]
+  sessions       Session[]
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime?     @map("deleted_at") @db.Timestamptz(6)
+
+  @@index([municipalityId])
+  @@index([structureId])
+  @@index([type])
+  @@map("programs")
+}
+
+model PricingTier {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String          @map("municipality_id") @db.Uuid
+  programId      String?         @map("program_id") @db.Uuid
+  program        Program?        @relation(fields: [programId], references: [id])
+  label          String
+  amountCents    Int             @map("amount_cents")
+  currency       String          @default("EUR")
+  ruleType       PricingRuleType @map("rule_type")
+  quotientMin    Int?            @map("quotient_min")
+  quotientMax    Int?            @map("quotient_max")
+  validFrom      DateTime?       @map("valid_from") @db.Date
+  validTo        DateTime?       @map("valid_to") @db.Date
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([programId])
+  @@map("pricing_tiers")
+}
+
+model CafIndicator {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String   @map("municipality_id") @db.Uuid
+  key            String
+  label          String
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([municipalityId, key])
+  @@map("caf_indicators")
+}
+
+// ── 3 · People ───────────────────────────────────────────────────────────────
+
+model Family {
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId    String        @map("municipality_id") @db.Uuid
+  reference         String?
+  name              String
+  addressStreet     String?       @map("address_street")
+  addressPostalCode String?       @map("address_postal_code")
+  addressCity       String?       @map("address_city")
+  neighborhoodId    String?       @map("neighborhood_id") @db.Uuid
+  neighborhood      Neighborhood? @relation(fields: [neighborhoodId], references: [id])
+  cafNumber         String?       @map("caf_number")
+  cafQuotient       Int?          @map("caf_quotient")
+  guardians         Guardian[]
+  children          Child[]
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt         DateTime?     @map("deleted_at") @db.Timestamptz(6)
+
+  @@index([municipalityId])
+  @@index([neighborhoodId])
+  @@map("families")
+}
+
+model Guardian {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String         @map("municipality_id") @db.Uuid
+  familyId       String         @map("family_id") @db.Uuid
+  family         Family         @relation(fields: [familyId], references: [id])
+  firstName      String         @map("first_name")
+  lastName       String         @map("last_name")
+  email          String?
+  phone          String?
+  guardianships  Guardianship[]
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime?      @map("deleted_at") @db.Timestamptz(6)
+
+  @@index([municipalityId])
+  @@index([familyId])
+  @@map("guardians")
+}
+
+model Child {
+  id                 String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId     String              @map("municipality_id") @db.Uuid
+  familyId           String?             @map("family_id") @db.Uuid
+  family             Family?             @relation(fields: [familyId], references: [id])
+  firstName          String              @map("first_name")
+  lastName           String              @map("last_name")
+  birthDate          DateTime            @map("birth_date") @db.Date
+  sex                Sex?
+  schoolStructureId  String?             @map("school_structure_id") @db.Uuid
+  schoolStructure    Structure?          @relation("ChildSchool", fields: [schoolStructureId], references: [id])
+  neighborhoodId     String?             @map("neighborhood_id") @db.Uuid
+  neighborhood       Neighborhood?       @relation(fields: [neighborhoodId], references: [id])
+  guardianships      Guardianship[]
+  enrollments        Enrollment[]
+  attendance         AttendanceRecord[]
+  meals              Meal[]
+  tripParticipations TripParticipation[]
+  passportJeunes     PassportJeune[]
+  pais               Pai[]
+  handicapFollowups  HandicapFollowup[]
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt          DateTime?           @map("deleted_at") @db.Timestamptz(6)
+
+  @@index([municipalityId])
+  @@index([familyId])
+  @@index([schoolStructureId])
+  @@index([birthDate])
+  @@map("children")
+}
+
+model Guardianship {
+  id             String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String               @map("municipality_id") @db.Uuid
+  childId        String               @map("child_id") @db.Uuid
+  child          Child                @relation(fields: [childId], references: [id], onDelete: Cascade)
+  guardianId     String               @map("guardian_id") @db.Uuid
+  guardian       Guardian             @relation(fields: [guardianId], references: [id], onDelete: Cascade)
+  relationship   GuardianRelationship
+  isPrimary      Boolean              @default(false) @map("is_primary")
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([childId, guardianId])
+  @@index([guardianId])
+  @@map("guardianships")
+}
+
+model Enrollment {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String           @map("municipality_id") @db.Uuid
+  childId        String           @map("child_id") @db.Uuid
+  child          Child            @relation(fields: [childId], references: [id])
+  programId      String           @map("program_id") @db.Uuid
+  program        Program          @relation(fields: [programId], references: [id])
+  schoolYearId   String           @map("school_year_id") @db.Uuid
+  schoolYear     SchoolYear       @relation(fields: [schoolYearId], references: [id])
+  period         String?
+  status         EnrollmentStatus @default(PENDING)
+  startsOn       DateTime?        @map("starts_on") @db.Date
+  endsOn         DateTime?        @map("ends_on") @db.Date
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime?        @map("deleted_at") @db.Timestamptz(6)
+
+  @@index([municipalityId])
+  @@index([programId])
+  @@index([schoolYearId])
+  @@map("enrollments")
+}
+
+// ── 4 · Operations ───────────────────────────────────────────────────────────
+
+model Session {
+  id             String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String             @map("municipality_id") @db.Uuid
+  programId      String             @map("program_id") @db.Uuid
+  program        Program            @relation(fields: [programId], references: [id])
+  structureId    String             @map("structure_id") @db.Uuid
+  structure      Structure          @relation(fields: [structureId], references: [id])
+  date           DateTime           @db.Date
+  startsAt       DateTime           @map("starts_at") @db.Time(6)
+  endsAt         DateTime           @map("ends_at") @db.Time(6)
+  capacity       Int?
+  attendance     AttendanceRecord[]
+  meals          Meal[]
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([municipalityId])
+  @@index([structureId, date])
+  @@index([programId, date])
+  @@map("sessions")
+}
+
+model AttendanceRecord {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String           @map("municipality_id") @db.Uuid
+  sessionId      String           @map("session_id") @db.Uuid
+  session        Session          @relation(fields: [sessionId], references: [id])
+  childId        String           @map("child_id") @db.Uuid
+  child          Child            @relation(fields: [childId], references: [id])
+  status         AttendanceStatus
+  checkedInAt    DateTime?        @map("checked_in_at") @db.Timestamptz(6)
+  checkedOutAt   DateTime?        @map("checked_out_at") @db.Timestamptz(6)
+  notes          String?
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime?        @map("deleted_at") @db.Timestamptz(6)
+
+  @@index([municipalityId, sessionId])
+  @@index([childId])
+  @@map("attendance_records")
+}
+
+model Meal {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String   @map("municipality_id") @db.Uuid
+  sessionId      String?  @map("session_id") @db.Uuid
+  session        Session? @relation(fields: [sessionId], references: [id])
+  childId        String   @map("child_id") @db.Uuid
+  child          Child    @relation(fields: [childId], references: [id])
+  date           DateTime @db.Date
+  type           String
+  consumed       Boolean  @default(false)
+  dietaryFlags   Json?    @map("dietary_flags") @db.JsonB
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([municipalityId, date])
+  @@index([childId])
+  @@map("meals")
+}
+
+model Trip {
+  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String              @map("municipality_id") @db.Uuid
+  name           String
+  date           DateTime            @db.Date
+  structureId    String?             @map("structure_id") @db.Uuid
+  structure      Structure?          @relation(fields: [structureId], references: [id])
+  destination    String?
+  capacity       Int?
+  participations TripParticipation[]
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime?           @map("deleted_at") @db.Timestamptz(6)
+
+  @@index([municipalityId, date])
+  @@map("trips")
+}
+
+model TripParticipation {
+  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String              @map("municipality_id") @db.Uuid
+  tripId         String              @map("trip_id") @db.Uuid
+  trip           Trip                @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  childId        String              @map("child_id") @db.Uuid
+  child          Child               @relation(fields: [childId], references: [id])
+  status         ParticipationStatus @default(REGISTERED)
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tripId, childId])
+  @@index([childId])
+  @@map("trip_participations")
+}
+
+model PassportJeune {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String    @map("municipality_id") @db.Uuid
+  childId        String    @map("child_id") @db.Uuid
+  child          Child     @relation(fields: [childId], references: [id])
+  number         String
+  issuedOn       DateTime? @map("issued_on") @db.Date
+  validUntil     DateTime? @map("valid_until") @db.Date
+  status         String    @default("ACTIVE")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([municipalityId, number])
+  @@index([childId])
+  @@map("passport_jeunes")
+}
+
+/// SENSITIVE (Art. 9): gated by pai.* permissions; every read audited.
+model Pai {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String    @map("municipality_id") @db.Uuid
+  childId        String    @map("child_id") @db.Uuid
+  child          Child     @relation(fields: [childId], references: [id])
+  type           String
+  startsOn       DateTime? @map("starts_on") @db.Date
+  endsOn         DateTime? @map("ends_on") @db.Date
+  details        Json?     @db.JsonB
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  @@index([childId])
+  @@map("pais")
+}
+
+/// SENSITIVE (Art. 9): gated by handicap.* permissions; every read audited.
+model HandicapFollowup {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String    @map("municipality_id") @db.Uuid
+  childId        String    @map("child_id") @db.Uuid
+  child          Child     @relation(fields: [childId], references: [id])
+  details        Json?     @db.JsonB
+  accommodations Json?     @db.JsonB
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  @@index([childId])
+  @@map("handicap_followups")
+}
+
+/// Polymorphic owner (owner_type + owner_id) — see docs/database/design-review.md §4 (D4).
+model Document {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String    @map("municipality_id") @db.Uuid
+  ownerType      String    @map("owner_type")
+  ownerId        String    @map("owner_id") @db.Uuid
+  type           String
+  storagePath    String    @map("storage_path")
+  fileName       String    @map("file_name")
+  mimeType       String    @map("mime_type")
+  sizeBytes      Int       @map("size_bytes")
+  uploadedBy     String?   @map("uploaded_by") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  @@index([municipalityId, ownerType, ownerId])
+  @@map("documents")
+}
+
+model Notification {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId  String    @map("municipality_id") @db.Uuid
+  recipientUserId String    @map("recipient_user_id") @db.Uuid
+  type            String
+  payload         Json?     @db.JsonB
+  readAt          DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([recipientUserId, readAt])
+  @@map("notifications")
+}
+
+model EmailTemplate {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String   @map("municipality_id") @db.Uuid
+  key            String
+  subject        String
+  body           String
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([municipalityId, key])
+  @@map("email_templates")
+}
+
+model EmailLog {
+  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  municipalityId String      @map("municipality_id") @db.Uuid
+  templateKey    String?     @map("template_key")
+  toAddress      String      @map("to_address")
+  subject        String
+  status         EmailStatus @default(QUEUED)
+  sentAt         DateTime?   @map("sent_at") @db.Timestamptz(6)
+  error          String?
+  metadata       Json?       @db.JsonB
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([municipalityId, status, createdAt])
+  @@map("email_logs")
+}

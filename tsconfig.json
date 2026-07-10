@@ -1,0 +1,11 @@
+{
+  "//": "Root editor config. Each app/package has its own tsconfig extending @stan/tsconfig.",
+  "extends": "./packages/tsconfig/base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false
+  },
+  "files": [],
+  "exclude": ["node_modules", "dist", ".next", ".turbo"]
+}

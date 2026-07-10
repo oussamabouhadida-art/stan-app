@@ -1,0 +1,185 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Stan — example municipality configuration
+#
+# This is an ILLUSTRATIVE example of the single file that installs a municipality.
+# It uses a FICTITIOUS municipality ("Ville-Exemple") on purpose: Stan never ships
+# real municipality data in the codebase (Context.md — No Hardcoded Data).
+#
+# Formats: YAML or JSON. Validated by @stan/config (Zod) before any DB write.
+# Idempotent upsert by natural keys. No passwords — users are invited via Supabase.
+# Full field reference: ./municipality.schema.md
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: 1
+
+municipality:
+  code: "94000-EXEMPLE"          # stable unique key (e.g. INSEE) — upsert key
+  name: "Ville-Exemple"
+  siret: "21940000000000"
+  timezone: "Europe/Paris"
+  locale: "fr-FR"
+  address:
+    street: "1 Place de la Mairie"
+    postalCode: "94000"
+    city: "Ville-Exemple"
+  contact:
+    email: "enfance@ville-exemple.fr"
+    phone: "0148000000"
+  branding:
+    logoUrl: "https://storage.example/tenants/94000-exemple/logo.svg"
+    primaryColor: "#1F6FEB"
+    secondaryColor: "#0B3D91"
+    banner: "Portail Enfance & Jeunesse — Ville-Exemple"
+
+# Which business domains are active for this tenant (feature gating from data).
+modules:
+  families: true
+  children: true
+  youth: true
+  attendance: true
+  meals: true
+  trips: true
+  activities: true
+  passportJeune: false
+  caf: true
+  documents: true
+  gis: true
+
+structures:
+  - code: "ECOLE-JAURES"
+    name: "École Jean Jaurès"
+    type: "school"
+    address: { street: "12 Rue Jean Jaurès", postalCode: "94000", city: "Ville-Exemple" }
+    capacity: 240
+    geo: { lat: 48.7900, lng: 2.4600 }
+  - code: "ALSH-CENTRE"
+    name: "Centre de Loisirs du Centre"
+    type: "leisure"
+    address: { street: "5 Avenue des Écoles", postalCode: "94000", city: "Ville-Exemple" }
+    capacity: 120
+    geo: { lat: 48.7920, lng: 2.4655 }
+  - code: "MJ-BELLEVUE"
+    name: "Maison des Jeunes Bellevue"
+    type: "youth"
+    address: { street: "3 Rue Bellevue", postalCode: "94000", city: "Ville-Exemple" }
+    capacity: 60
+    geo: { lat: 48.7850, lng: 2.4700 }
+
+schoolYears:
+  - label: "2025-2026"
+    startsOn: "2025-09-01"
+    endsOn: "2026-07-06"
+    zone: "C"
+    holidayPeriods:
+      - { name: "Vacances de la Toussaint", startsOn: "2025-10-18", endsOn: "2025-11-03" }
+      - { name: "Vacances de Noël",         startsOn: "2025-12-20", endsOn: "2026-01-05" }
+      - { name: "Vacances d'Hiver",         startsOn: "2026-02-14", endsOn: "2026-03-02" }
+      - { name: "Vacances de Printemps",    startsOn: "2026-04-11", endsOn: "2026-04-27" }
+    publicHolidays:
+      - { name: "Toussaint",     date: "2025-11-01" }
+      - { name: "Armistice",     date: "2025-11-11" }
+      - { name: "Noël",          date: "2025-12-25" }
+      - { name: "Jour de l'An",  date: "2026-01-01" }
+      - { name: "Fête du Travail", date: "2026-05-01" }
+
+openingHours:
+  - structureCode: "ALSH-CENTRE"
+    period: "periscolaire"
+    windows:
+      - { day: "monday",    opensAt: "07:30", closesAt: "08:30" }
+      - { day: "monday",    opensAt: "16:30", closesAt: "18:30" }
+      - { day: "wednesday", opensAt: "08:00", closesAt: "18:00" }
+  - structureCode: "MJ-BELLEVUE"
+    period: "annuel"
+    windows:
+      - { day: "wednesday", opensAt: "13:30", closesAt: "19:00" }
+      - { day: "saturday",  opensAt: "10:00", closesAt: "18:00" }
+
+programs:
+  - code: "ATELIER-ARTS"
+    name: "Atelier Arts Plastiques"
+    type: "workshop"
+    structureCode: "ALSH-CENTRE"
+    minAge: 6
+    maxAge: 11
+    capacity: 20
+  - code: "STAGE-SPORT"
+    name: "Stage Multisports"
+    type: "activity"
+    structureCode: "ALSH-CENTRE"
+    minAge: 8
+    maxAge: 14
+    capacity: 24
+
+pricing:
+  - programCode: "ATELIER-ARTS"
+    label: "Tarif quotient 1"
+    amount: 8.50            # EUR
+    rule: { type: "quotient", min: 0, max: 500 }
+  - programCode: "ATELIER-ARTS"
+    label: "Tarif quotient 2"
+    amount: 12.00
+    rule: { type: "quotient", min: 501, max: 900 }
+  - programCode: "STAGE-SPORT"
+    label: "Semaine"
+    amount: 45.00
+    rule: { type: "flat" }
+
+caf:
+  indicators:
+    - { key: "heures_enfance", label: "Heures enfance déclarées" }
+    - { key: "heures_jeunesse", label: "Heures jeunesse déclarées" }
+  settings:
+    declarationFrequency: "monthly"
+
+# Seed roles — fully editable in Administration afterwards. Permission keys come
+# from the global catalog (see docs/authorization-rbac.md).
+roles:
+  - name: "Directeur"
+    description: "Direction d'une structure"
+    permissions:
+      - "family.read"
+      - "child.read"
+      - "child.write"
+      - "attendance.read"
+      - "attendance.write"
+      - "activity.manage"
+      - "report.view"
+      - "document.read"
+      - "document.write"
+  - name: "Animateur"
+    description: "Encadrement et pointage"
+    permissions:
+      - "child.read"
+      - "attendance.read"
+      - "attendance.write"
+  - name: "Administrateur"
+    description: "Configuration de la commune"
+    permissions:
+      - "admin.config"
+      - "admin.access"
+      - "admin.tools"
+      - "report.view"
+  - name: "Lecture seule"
+    description: "Consultation"
+    permissions:
+      - "family.read"
+      - "child.read"
+      - "attendance.read"
+      - "report.view"
+
+# Users are referenced by email + role. NO passwords — Supabase sends an invite.
+users:
+  - { email: "marie.durand@ville-exemple.fr", firstName: "Marie",  lastName: "Durand",  roleName: "Administrateur" }
+  - { email: "karim.benali@ville-exemple.fr", firstName: "Karim",  lastName: "Benali",  roleName: "Directeur",  structureCodes: ["ALSH-CENTRE"] }
+  - { email: "lea.martin@ville-exemple.fr",   firstName: "Léa",    lastName: "Martin",  roleName: "Animateur",  structureCodes: ["ALSH-CENTRE"] }
+
+emailDomains:
+  - "ville-exemple.fr"
+
+settings:
+  defaultLandingModule: "dashboard"
+  attendance:
+    allowRetroactiveDays: 3
+  ui:
+    dateFormat: "dd/MM/yyyy"

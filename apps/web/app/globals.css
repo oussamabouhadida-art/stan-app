@@ -1,0 +1,15 @@
+@import 'tailwindcss';
+@import '../../../packages/ui/src/styles/tokens.css';
+
+@source '../../../packages/ui/src';
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    -webkit-font-smoothing: antialiased;
+  }
+}
